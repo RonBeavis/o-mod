@@ -1,6 +1,7 @@
 # mod_finder.py is used to create ω-mod files for individual species
 # a FASTA file supplies the protein sequences and accession numbers to use
 # Copyright © 2021 Ron Beavis
+
 import sys
 import requests
 import re
@@ -10,9 +11,23 @@ import time
 from datetime import datetime
 import mysql.connector
 
-SP = {'yeast' : 'Saccharomyces cerevisiae', 'rat': 'Rattus norvegicus', 'human': 'Homo sapiens', 'mouse': 'Mus musculus'}
+#dict for translating common name into binomial name
+SP = {	'yeast' : 'Saccharomyces cerevisiae', 
+	'rat': 'Rattus norvegicus', 
+	'human': 'Homo sapiens', 
+	'mouse': 'Mus musculus'}
 
+#dict for database credentials
+
+CREDS = {	'ip':'i.i.i.i',
+		'user':'uuuu',
+		'pass':'pppp',
+		'db': 'dddd'}
+
+
+#retreive modification information for a specified accession and modification type
 def getModified(_acc,_last,_type,_cursor):
+	#get the GPMDB internal id number associated with the accession
 	sql = "select proseqid from proseq where label=%(acc)s";
 	_cursor.execute(sql,{'acc':_acc})
 	vs = _cursor.fetchall()
@@ -23,6 +38,7 @@ def getModified(_acc,_last,_type,_cursor):
 		return res
 
 	proid = vs[0][0]
+	#setup the SQL statement for getting modification information
 	if _type == 'phosphoryl':
 		sql = "select at,freq from phos_freq where proseqid=%(proid)s";
 	elif _type == 'acetyl':
@@ -39,6 +55,7 @@ def getModified(_acc,_last,_type,_cursor):
 	for v in vs:
 		rs[v[0]] = v[1]
 	res = dict()
+	#create a dict with values across the entire sequence
 	for i in range(1,_last+1):
 		if i in rs:
 			res[i] = rs[i]
@@ -46,21 +63,26 @@ def getModified(_acc,_last,_type,_cursor):
 			res[i] = 0
 	return res
 
+#run through the proteins listed in _p and save information to files
 def load_proteins(_p,_f,_m):
+	#connect to GPMDB
 	try:
-		conn = mysql.connector.connect(host='i.i.i.i',
-						database='dddd',
-						user='uuuu',
-						password='pppp') 
+		conn = mysql.connector.connect(host=CREDS['ip'],
+						database=CREDS['db'],
+						user=CREDS['user'],
+						password=CREDS['pass') 
 	except:
-		print('{"error":"Could not connect to database"}\n')
+		print('{Error: Could not connect to database')
 		exit()
-
+	#create a cursor
 	curses = conn.cursor()
+	#get species common name from fasta file
 	species = re.sub(r'(.+?)_.+',r'\1',_f)
 	full_species = species
+	#get binomial name from SP
 	if species in SP:
 		full_species = SP[species]
+	#compose file header information
 	d = datetime.today().strftime('%Y-%m-%d')
 	o = open('%s_mod.xml' % (species),'w')
 	js = open('%s_mod.json' % (species),'w')
@@ -72,6 +94,7 @@ def load_proteins(_p,_f,_m):
 	plen = len(_p)
 	start = time.time()
 	delta = time.time()
+	#get modification information
 	for l in _p:
 		c += 1
 		if c % 1000 == 0:
@@ -147,7 +170,7 @@ def load_proteins(_p,_f,_m):
 			md += 1
 		j = json.dumps(pmods)
 		js.write("%s\n" % (j))
-
+	#disconnect from GPMDB
 	curses.close()
 	conn.close()
 	if os.path.exists('%s_extra.xml' % (species)):
@@ -157,41 +180,54 @@ def load_proteins(_p,_f,_m):
 			if line.find('<') == -1:
 				continue
 			o.write('%s\n' % (line))
-		o.write('</bioml>\n')
-		o.close()
 	else:
 		print('No %s_extra.xml exists' % (species))
 
+	#compose and record file finish information
+
+	o.write('</bioml>\n')
+	o.close()
+	
 	js.write("%s\n" % (json.dumps({'lines': c+2, 'accessions': c, 'modified': md})))
 	js.close()
 
-f = open(sys.argv[1],'r')
-proteins = dict()
-label = ''
-seq = ''
-for l in f:
-	l = l.strip()
-	if l.find('>ENS') == 0:
-		if len(label):
-			proteins[label] = seq
-		label = re.sub(r'\>(ENS[A-Z]*\d+).+',r'\1',l)
-		seq = ''
-	elif l.find('>') == 0:
-		if len(label):
-			proteins[label] = seq
-		label = re.sub(r'\>([^ ]+) .+',r'\1',l)
-		seq = ''
-	else:
-		seq += l
-if len(seq):
-	proteins[label] = seq
-f.close()
-mobs = 5
-try:
-	mobs = int(sys.argv[2])
-except:
-	pass
-print('FASTA: %s\nmin obs: %i\n' % (sys.argv[1],mobs))
-load_proteins(proteins,sys.argv[1],mobs)
+def main():
+	#open the specified FASTA file
+	f = open(sys.argv[1],'r')
+	proteins = dict()
+	label = ''
+	seq = ''
+	#store protein information into proteins
+	for l in f:
+		l = l.strip()
+		if l.find('>ENS') == 0:
+			if len(label):
+				proteins[label] = seq
+			label = re.sub(r'\>(ENS[A-Z]*\d+).+',r'\1',l)
+			seq = ''
+		elif l.find('>') == 0:
+			if len(label):
+				proteins[label] = seq
+			label = re.sub(r'\>([^ ]+) .+',r'\1',l)
+			seq = ''
+		else:
+			seq += l
+	if len(seq):
+		proteins[label] = seq
+	f.close()
+	#retreive minimum # of observations from command line
+	mobs = 5
+	try:
+		mobs = int(sys.argv[2])
+	except:
+		pass
+
+	#start getting protein modification information
+
+	print('FASTA: %s\nmin obs: %i\n' % (sys.argv[1],mobs))
+	load_proteins(proteins,sys.argv[1],mobs)
+
+if __name__ == "__main__":
+    main()
 
 
