@@ -1,9 +1,10 @@
 # mod_finder.py is used to create ω-mod files for individual species
 # a FASTA file supplies the protein sequences and accession numbers to use
 # Copyright © 2021 Ron Beavis
+# Note: this file is for code analysis only. The anonymized
+# database credentials mean that the code will not run
 
 import sys
-import requests
 import re
 import json
 import os
@@ -18,7 +19,7 @@ SP = {	'yeast' : 'Saccharomyces cerevisiae',
 	'mouse': 'Mus musculus'}
 
 #dict for database credentials
-
+#in this case, anonymized and non-functional
 CREDS = {	'ip':'i.i.i.i',
 		'user':'uuuu',
 		'pass':'pppp',
@@ -31,6 +32,7 @@ def getModified(_acc,_last,_type,_cursor):
 	sql = "select proseqid from proseq where label=%(acc)s";
 	_cursor.execute(sql,{'acc':_acc})
 	vs = _cursor.fetchall()
+	#if the accession number does not exist, return 0 for all residues
 	if not vs:
 		res = dict()
 		for i in range(1,_last+1):
@@ -48,10 +50,12 @@ def getModified(_acc,_last,_type,_cursor):
 	elif _type == 'GGyl':
 		sql = "select at,freq from ubi_freq where proseqid=%(proid)s";
 	else:
-		print('Bad type specification "%s"' % (_type))
+		print('Error:bad type specification "%s"' % (_type))
+		exit()
 	_cursor.execute(sql,{'proid':proid})
 	vs = _cursor.fetchall()
 	rs = dict()
+	#create a dict for non-zero values
 	for v in vs:
 		rs[v[0]] = v[1]
 	res = dict()
@@ -92,11 +96,13 @@ def load_proteins(_p,_f,_m):
 	c = 0
 	md = 0
 	plen = len(_p)
+	#initialize timers to monitor progress
 	start = time.time()
 	delta = time.time()
 	#get modification information
 	for l in _p:
 		c += 1
+		# print a keep-alive diagnostic message at regular intervals
 		if c % 1000 == 0:
 			dt = time.time()-delta
 			tt = time.time()-start
@@ -105,15 +111,17 @@ def load_proteins(_p,_f,_m):
 			print('%i/%i: %i (%.1f%%) delta: %.1f s, current: %.3f m, remaining: %.3f m' 
 				% (c,plen,md,100.0*float(c)/float(plen),dt,tt/60,rt/60))
 			delta = time.time()
-		session = requests.session()
 		seq = proteins[l]
-
+		#dict for storing results, by PTM
 		values = {'acetyl':{},'phosphoryl':{},'dimethyl':{},'GGyl':{}}
+		#load values
 		for v in values:
 			values[v] = getModified(l,len(seq),v,curses)
 		min_obs = _m
 		mod_types = set()
+		#initialize the dict that will be used to generate single line JSON object
 		pmods = {'accession' : l,'acetyl' : [],'phosphoryl' : [], 'dimethyl' : [], 'GGyl' : [], 'seq' : seq}
+		#loop through all residues, updating records for each
 		for a in range(1,len(seq)+1):
 			if a in values['acetyl']:
 				if seq[a-1] == 'K':
@@ -153,6 +161,7 @@ def load_proteins(_p,_f,_m):
 						mod_types.add('pY')
 					if p > 0:
 						pmods['phosphoryl'].append({'r':seq[a-1],'c':a,'n':p})
+		#check to see if the XML file will be updated
 		if len(mod_types):
 			mods = list()
 			if 'aK' in mod_types:
@@ -168,11 +177,13 @@ def load_proteins(_p,_f,_m):
 			line = '<protein label="%s" pmods="%s" />' % (l,','.join(mods))
 			o.write('%s\n' % (line))
 			md += 1
+		#record the information in pmods as a line of JSON
 		j = json.dumps(pmods)
 		js.write("%s\n" % (j))
 	#disconnect from GPMDB
 	curses.close()
 	conn.close()
+	#add additional hand-curated information
 	if os.path.exists('%s_extra.xml' % (species)):
 		print('Adding %s_extra.xml' % (species))
 		ls = [l.strip() for l in open('%s_extra.xml' % (species),'r')]
