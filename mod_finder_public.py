@@ -21,10 +21,10 @@ SP = {	'yeast' : 'Saccharomyces cerevisiae',
 
 
 #in this case, anonymized and non-functional
-#CREDS = {	'ip':'i.i.i.i',
-#		'user':'uuuu',
-#		'pass':'pppp',
-#		'db': 'dddd'}
+CREDS = {	'ip':'i.i.i.i',
+		'user':'uuuu',
+		'pass':'pppp',
+		'db': 'dddd'}
 
 GENES = {	'semi': set(['ins','ins1','ins2']),
 		'gla': set(['f2','pros1','f10','f9','f7','proc','proz','bglap']),
